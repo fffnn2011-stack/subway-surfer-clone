@@ -15,6 +15,9 @@ const LANES = [-2.2, 0, 2.2];
 const GRAVITY = -32;
 const TRAIN_H = 2.3;
 const TRAIN_W = 1.9;
+// walkable ramp: footprint length, top meets train roof (topY = TRAIN_H+0.29)
+const RAMP_LEN = 4.2;
+const RAMP_TOP = TRAIN_H + 0.29;
 
 // ---------- tiny helpers ----------
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
@@ -307,14 +310,35 @@ function makePole(){
   return g;
 }
 function makeRamp(){
+  // Walkable wedge: LOW edge faces the player (+z, arrives first),
+  // rising toward the train (-z) with the top lip flush with the roof.
   const g=new THREE.Group();
-  const r=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.25,3.2),
-    new THREE.MeshLambertMaterial({color:0xffd23f}));
-  r.position.set(0,0.75,-0.4); r.rotation.x=-0.42; r.castShadow=true; g.add(r);
-  const base=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.5,0.6),
+  const slopeLen=Math.sqrt(RAMP_LEN*RAMP_LEN+RAMP_TOP*RAMP_TOP);
+  const ang=Math.atan2(RAMP_TOP, RAMP_LEN); // >0 => +z end low, -z end high
+  // striped deck (direction-neutral rungs so mirroring can't confuse it)
+  const c=document.createElement('canvas'); c.width=64; c.height=128;
+  const sg=c.getContext('2d');
+  sg.fillStyle='#ffd23f'; sg.fillRect(0,0,64,128);
+  sg.fillStyle='#111111';
+  for(let y=8;y<128;y+=24) sg.fillRect(0,y,64,9);
+  const stripeTex=new THREE.CanvasTexture(c); stripeTex.colorSpace=THREE.SRGBColorSpace;
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.18,slopeLen),
+    new THREE.MeshLambertMaterial({map:stripeTex}));
+  deck.position.set(0, RAMP_TOP/2, 0);
+  deck.rotation.x=ang;
+  deck.castShadow=true; deck.receiveShadow=true; g.add(deck);
+  // dark side skirts sell the wedge silhouette
+  for(const s of [-1,1]){
+    const skirt=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.6,slopeLen),
+      new THREE.MeshLambertMaterial({color:0x333333}));
+    skirt.position.set(s*0.95, RAMP_TOP/2-0.25, 0);
+    skirt.rotation.x=ang; g.add(skirt);
+  }
+  // foot block under the LOW (player-side, +z) entry lip
+  const foot=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.3,0.5),
     new THREE.MeshLambertMaterial({color:0x333333}));
-  base.position.set(0,0.25,1.2); g.add(base);
-  g.userData={kind:'ramp', len:3.2, w:1.8, h:1.4};
+  foot.position.set(0,0.15,RAMP_LEN/2-0.2); foot.castShadow=true; g.add(foot);
+  g.userData={kind:'ramp', len:RAMP_LEN, w:1.8, top:RAMP_TOP};
   return g;
 }
 const coinGeo = new THREE.CylinderGeometry(0.42,0.42,0.12,18);
@@ -429,8 +453,18 @@ function spawnPattern(z){
       const t=makeTrain(len); addEntity(t, l, z-len/2);
       if(Math.random()<.6) coinRoof(l, z-2, len-3);
     }
-    const ramp=makeRamp(); addEntity(ramp, rideLane, z+2);
     const train=makeTrain(len); addEntity(train, rideLane, z-len/2-4);
+    // ramp sits flush against the train's near end so you run straight up onto the roof
+    const trainNear=(z-len/2-4)+len/2; // == z-4
+    const rampZ=trainNear+RAMP_LEN/2-0.3;
+    const ramp=makeRamp(); addEntity(ramp, rideLane, rampZ);
+    // coin trail guiding up the slope
+    for(let i=0;i<5;i++){
+      const frac=(i+0.5)/5;
+      const c=makeCoin();
+      c.position.set(LANES[rideLane], frac*RAMP_TOP+0.8, rampZ+RAMP_LEN/2-frac*RAMP_LEN);
+      c.userData.spin=rand(0,6); scene.add(c); entities.push(c);
+    }
     coinRoof(rideLane, z-6, len-3);
     coinLine(rideLane, z+10, 4);
     return z - len - rand(20,28);
@@ -603,9 +637,22 @@ function groundAt(x, y){
   let g=0;
   for(const e of entities){
     const u=e.userData;
-    if(u.kind!=='train') continue;
-    if(Math.abs(e.position.z) < u.len/2+0.6 && Math.abs(x-e.position.x) < 1.0){
-      if(y >= u.topY-0.55) g=Math.max(g, u.topY);
+    if(u.kind==='train'){
+      // 1.15 (not 1.0) so adjacent train roofs overlap: switching lanes
+      // across roofs can never dip into a "dead zone" and side-swipe
+      if(Math.abs(e.position.z) < u.len/2+0.6 && Math.abs(x-e.position.x) < 1.15){
+        if(y >= u.topY-0.55) g=Math.max(g, u.topY);
+      }
+    } else if(u.kind==='ramp'){
+      // sloped support: low at player-side edge, high at train-side edge.
+      // Ramp centre dz goes -half (first touch, h=0) -> +half (h=top)
+      // as the world slides it under the player.
+      const half=u.len/2, dz=e.position.z;
+      if(Math.abs(dz) < half+0.8 && Math.abs(x-e.position.x) < 1.0){
+        const t=clamp((half-dz)/u.len, 0, 1);
+        const h=(1-t)*u.top;
+        if(y >= h-0.6) g=Math.max(g, h);
+      }
     }
   }
   return g;
@@ -649,16 +696,8 @@ function checkCollisions(dt){
     if(Math.abs(dz)>3) continue;
     const ex=e.position.x;
 
-    if(u.kind==='ramp'){
-      if(Math.abs(dz)<1.9 && Math.abs(ex-G.x)<1.0 && G.y<1.6){
-        // launch onto the train roof (must clear 2.6m roof: v=14 -> ~3m peak)
-        G.vy=Math.max(G.vy, 14); G.grounded=false;
-        toast('⬆ RAMP!');
-        AudioSys.jump();
-        scene.remove(e); entities.splice(i,1);
-      }
-      continue;
-    }
+    // ramps are walkable ground (handled by groundAt) — never a collider
+    if(u.kind==='ramp') continue;
     if(u.kind==='low'){
       const box={x:ex, top:1.05, bottom:0, hw:1.0, len:0.6, z:dz};
       if(overlap(pb,box)){
