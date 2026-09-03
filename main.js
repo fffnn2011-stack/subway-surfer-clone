@@ -521,11 +521,16 @@ function spawnPattern(z){
     addEntity(makeTrain(randi(8,14)), randi(0,2), z-20);
     return z - rand(28,34);
   }
-  // staggered trains
+  // staggered trains — fairness rule: max TWO train lanes at once, the third
+  // lane is always a guaranteed escape route (coins + occasional hop/roll barrier)
+  const gapLane=randi(0,2);
   for(let l=0;l<3;l++){
-    if(Math.random()<.75){ const t=makeTrain(rand(7,13)); addEntity(t, l, z-rand(0,10)); }
+    if(l===gapLane) continue;
+    const t=makeTrain(rand(7,13)); addEntity(t, l, z-rand(0,8));
+    if(Math.random()<.5) coinRoof(l, z-4, 7);
   }
-  coinLine(freeLane, z, 6);
+  coinLine(gapLane, z, 8);
+  if(Math.random()<.4) addEntity(Math.random()<.5?makeBarrierLow():makeBarrierHigh(), gapLane, z-16);
   return z - rand(26,34);
 }
 
@@ -570,11 +575,28 @@ function maybeNextMissionSet(){
   }
 }
 
+// lay a sky-coin trail covering the whole jetpack flight, and clear the
+// ground coins ahead that would be unreachable while flying at y=6
+function seedSkyCoins(){
+  for(let i=entities.length-1;i>=0;i--){
+    const e=entities[i];
+    if(e.userData.kind==='coin' && e.position.z<-4 && e.position.z>-115){
+      scene.remove(e); entities.splice(i,1);
+    }
+  }
+  const flightDist=G.speed*6+70;
+  for(let zz=-2; zz>-flightDist; zz-=16) coinSkyRow(zz, 6);
+}
+
 // ---------- power-ups ----------
 function activatePower(type){
   AudioSys.power();
   if(type==='magnet'){ G.magnetT=8; toast('🧲 MAGNET!'); }
-  if(type==='jetpack'){ G.jetT=6; G.vy=0; toast('🚀 JETPACK!'); }
+  if(type==='jetpack'){
+    G.jetT=6; G.vy=0; G.grounded=false;
+    seedSkyCoins();
+    toast('🚀 JETPACK!');
+  }
   if(type==='sneakers'){ G.sneakT=9; toast('👟 SUPER SNEAKERS!'); }
   if(type==='star'){ G.starT=8; toast('⭐ 2x SCORE!'); }
   if(type==='board'){ G.boards++; toast('🛹 +1 HOVERBOARD!'); updateBoardUI(); }
@@ -967,15 +989,19 @@ function update(dt){
   maybeNextMissionSet();
 
   // timers
+  const wasJet=G.jetT>0;
   for(const k of ['starT','magnetT','sneakT','jetT','boardT']) if(G[k]>0) G[k]-=dt;
+  if(wasJet && G.jetT<=0){
+    // jetpack ended: falling back to the tracks — brief grace so the
+    // landing spot can't insta-kill
+    G.vy=0; G.invinc=Math.max(G.invinc,1.5);
+  }
   if(G.boardT<=0 && !G.shield) player.userData.board.visible=false;
   if(G.boardT<=0) G.shield = G.shield && false; // shield consumed with board
   // keep shield while board active
   if(G.boardT>0) G.shield=true;
   if(G.invinc>0) G.invinc-=dt;
   timerTick+=dt; if(timerTick>0.25){ timerTick=0; renderTimers(); }
-
-  if(G.jetT>0 && Math.random()<dt*2) coinSkyRow(G.nextSpawnZ-10);
 
   // spawn ahead
   while(G.nextSpawnZ>-140){
