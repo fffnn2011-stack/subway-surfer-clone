@@ -182,23 +182,32 @@ for(let i=0;i<8;i++){
 }
 
 // ---------- player ----------
-function buildRunner(shirt=0xff5da2, pants=0x2b50ff, skin=0xf2b880){
+function buildRunner(shirt=0xff5da2, pants=0x2b50ff, skin=0xf2b880, opts={}){
   const g=new THREE.Group();
   const mat = c=>new THREE.MeshLambertMaterial({color:c});
+  const sleeve = opts.sleeve!=null ? opts.sleeve : shirt;
   const torso=new THREE.Mesh(new THREE.BoxGeometry(0.72,0.8,0.42), mat(shirt));
   torso.position.y=1.25; torso.castShadow=true; g.add(torso); g.userData.torso=torso;
   const head=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5), mat(skin));
   head.position.y=1.95; head.castShadow=true; g.add(head); g.userData.head=head;
-  const cap=new THREE.Mesh(new THREE.BoxGeometry(0.54,0.16,0.54), mat(0xe63946));
-  cap.position.y=2.24; g.add(cap);
-  const brim=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.06,0.3), mat(0xe63946));
-  brim.position.set(0,2.18,-0.4); g.add(brim);
+  if(opts.hair!=null){
+    // short buzzed hair instead of a cap — sits close to the skull
+    const hairTop=new THREE.Mesh(new THREE.BoxGeometry(0.52,0.14,0.52), mat(opts.hair));
+    hairTop.position.y=2.21; g.add(hairTop);
+    const hairBack=new THREE.Mesh(new THREE.BoxGeometry(0.52,0.3,0.1), mat(opts.hair));
+    hairBack.position.set(0,2.05,-0.21); g.add(hairBack);
+  } else {
+    const cap=new THREE.Mesh(new THREE.BoxGeometry(0.54,0.16,0.54), mat(0xe63946));
+    cap.position.y=2.24; g.add(cap);
+    const brim=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.06,0.3), mat(0xe63946));
+    brim.position.set(0,2.18,-0.4); g.add(brim);
+  }
   const pack=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.55,0.22), mat(0x27ae60));
   pack.position.set(0,1.3,0.32); g.add(pack);
   const legL=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.85,0.3), mat(pants));
   legL.geometry.translate(0,-0.42,0); legL.position.set(-0.19,0.85,0); legL.castShadow=true; g.add(legL);
   const legR=legL.clone(); legR.position.x=0.19; g.add(legR);
-  const armL=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.7,0.24), mat(shirt));
+  const armL=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.7,0.24), mat(sleeve));
   armL.geometry.translate(0,-0.35,0); armL.position.set(-0.5,1.6,0); armL.castShadow=true; g.add(armL);
   const armR=armL.clone(); armR.position.x=0.5; g.add(armR);
   g.userData={...g.userData, legL, legR, armL, armR};
@@ -220,7 +229,7 @@ function buildRunner(shirt=0xff5da2, pants=0x2b50ff, skin=0xf2b880){
   jet.visible=false; g.add(jet); g.userData.jet=jet;
   return g;
 }
-const player = buildRunner();
+const player = buildRunner(0xf3f3ef, 0xc0392b, 0xd9a06c, { hair:0x2a1e16, sleeve:0xaed6f1 });
 scene.add(player);
 
 // guard + dog (chaser)
