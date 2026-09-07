@@ -16,6 +16,13 @@ jobs:
         with:
           node-version: 22
 
+      - name: Prepare web files
+        run: |
+          mkdir -p www
+          cp index.html www/
+          cp main.js www/
+          cp style.css www/
+
       - name: Install dependencies
         run: npm install
 
