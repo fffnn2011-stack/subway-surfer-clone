@@ -1,0 +1,8 @@
+{
+  "appId": "com.aymane.subwaydash",
+  "appName": "Subway Dash",
+  "webDir": ".",
+  "server": {
+    "androidScheme": "https"
+  }
+}
